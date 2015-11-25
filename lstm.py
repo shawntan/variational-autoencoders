@@ -7,6 +7,7 @@ from theano_toolkit import utils as U
 from theano_toolkit import updates
 from theano_toolkit.parameters import Parameters
 
+
 def orthogonal_init(*dimensions):
     flat_dimensions = (dimensions[0], np.prod(dimensions[1:]))
     a = np.random.randn(*flat_dimensions)
@@ -15,6 +16,7 @@ def orthogonal_init(*dimensions):
     q = u if u.shape == flat_dimensions else v
     q = q.reshape(dimensions)
     return q
+
 
 def build(P, name, input_size, hidden_size, truncate_gradient=-1):
     name_init_hidden = "init_%s_hidden" % name
@@ -110,8 +112,8 @@ def build_step(P, name, input_size, hidden_size):
         hid = out_gate * T.tanh(cell)
 
         if mask is not None:
-            mask = mask.dimshuffle(0,'x')
-            cell = T.switch(mask,cell,prev_cell)
-            hid = T.switch(mask,hid,prev_hid)
+            mask = mask.dimshuffle(0, 'x')
+            cell = T.switch(mask, cell, prev_cell)
+            hid = T.switch(mask, hid, prev_hid)
         return cell, hid
     return _step
