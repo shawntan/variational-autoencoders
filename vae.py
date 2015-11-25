@@ -40,13 +40,17 @@ def build(P, name,
         return recon_X_mean,T.mean(cost),T.mean(KL_d),T.mean(log_p_X)
     return encode,decode,recon_error
 
-def gaussian_log(mean,logvar,X):
+def gaussian_nll(X,mean,logvar):
     return - 0.5 * T.sum(
         np.log(2 * np.pi) + logvar +\
                 T.sqr(X - mean)/T.exp(logvar),axis=-1)
 
-def kl_divergence(mean, logvar):
-    return -0.5 * T.sum(1 + logvar - T.sqr(mean) - T.exp(logvar), axis=-1)
+def kl_divergence(mean_1, logvar_1, mean_2, logvar_2):
+    return - 0.5  * T.sum(\
+                logvar_2 - logvar_1 +\
+                (( T.exp(logvar_1) + T.sqr(mean_1 - mean_2) )
+                    / T.exp(logvar_2)), axis=-1
+            )
 
 def build_inferer(P,name,input_sizes,hidden_sizes,output_size,
         initial_weights,activation,
