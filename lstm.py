@@ -6,16 +6,14 @@ import cPickle as pickle
 from theano_toolkit import utils as U
 from theano_toolkit import updates
 from theano_toolkit.parameters import Parameters
+import scipy.linalg
 
+def transition_init(size,fan_out):
+    W = np.empty((size,fan_out * size),dtype=np.float32)
+    for i in xrange(fan_out):
+        W[:,i * size:(i + 1) * size] = scipy.linalg.orth(np.random.randn(size,size))
+    return W
 
-def orthogonal_init(*dimensions):
-    flat_dimensions = (dimensions[0], np.prod(dimensions[1:]))
-    a = np.random.randn(*flat_dimensions)
-    u, _, v = np.linalg.svd(a, full_matrices=False)
-    # pick the one with the correct shape
-    q = u if u.shape == flat_dimensions else v
-    q = q.reshape(dimensions)
-    return q
 
 
 def build(P, name, input_size, hidden_size, truncate_gradient=-1):
@@ -47,10 +45,10 @@ def build_step(P, name, input_size, hidden_size):
     name_W_cell = "W_%s_cell" % name
     name_b = "b_%s" % name
     P[name_W_input] = 0.1 * np.random.rand(input_size, hidden_size * 4)
-    P[name_W_hidden] = 0.1 * np.random.rand(hidden_size, hidden_size * 4)
-    P[name_W_cell] = 0.1 * np.random.rand(hidden_size, hidden_size * 3)
+    P[name_W_hidden] = transition_init(hidden_size,4)
+    P[name_W_cell] = transition_init(hidden_size,3)
     bias_init = np.zeros((4, hidden_size), dtype=np.float32)
-    bias_init[1] = 2.5
+    bias_init[1] = 1.5
     P[name_b] = bias_init
 
     V_if = P[name_W_cell][:, 0 * hidden_size:2 * hidden_size]

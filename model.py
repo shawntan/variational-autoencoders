@@ -4,7 +4,6 @@ import numpy as np
 import cPickle as pickle
 
 from theano_toolkit import utils as U
-from theano_toolkit import updates
 from theano_toolkit.parameters import Parameters
 
 import feedforward
@@ -14,12 +13,12 @@ import lstm
 
 def build(P, name,
           input_size=200, z_size=200,
-          hidden_layer_size=2048,
-          x_extractor_layers=[512] * 4,
-          z_extractor_layers=[512] * 4,
-          prior_layers=[512] * 4,
-          generation_layers=[512] * 4,
-          inference_layers=[512] * 4):
+          hidden_layer_size=2500,
+          x_extractor_layers=[600] * 4,
+          z_extractor_layers=[500] * 4,
+          prior_layers=[500] * 4,
+          generation_layers=[600] * 4,
+          inference_layers=[500] * 4):
 
     X_extractor = feedforward.build_classifier(
         P, "x_extractor",
@@ -85,15 +84,19 @@ def build(P, name,
 
         init_hidden = T.tanh(P.init_recurrence_hidden)
         init_cell = P.init_recurrence_cell
-        init_hidden_batch = T.alloc(init_hidden, X.shape[0], hidden_layer_size)
-        init_cell_batch = T.alloc(init_cell, X.shape[0], hidden_layer_size)
+        init_hidden_batch = T.alloc(init_hidden, X.shape[1], hidden_layer_size)
+        init_cell_batch = T.alloc(init_cell, X.shape[1], hidden_layer_size)
+        noise = U.theano_rng.normal(size=(X.shape[0],X.shape[1],z_size))
+
         X_feat = X_extractor([X])
 
-        def _step(x_feat, prev_cell, prev_hidden):
+        def _step(x_feat,eps, prev_cell, prev_hidden):
             _, z_prior_mean, z_prior_logvar = prior([prev_hidden])
-            z_sample, z_mean, z_logvar = infer([prev_hidden, x_feat])
+            _, z_mean, z_logvar = infer([prev_hidden, x_feat])
+            z_sample = z_mean + eps * T.exp(0.5 * z_logvar)
             z_feat = Z_extractor([z_sample])
-            x_sample, x_mean, x_logvar = generate([prev_hidden, z_feat])
+            _, x_mean, x_logvar = generate([prev_hidden, z_feat])
+
             curr_cell, curr_hidden = recurrence(
                 T.concatenate([
                     x_feat,
@@ -104,53 +107,39 @@ def build(P, name,
             return curr_cell, curr_hidden,\
                 z_prior_mean, z_prior_logvar, \
                 z_sample, z_mean, z_logvar,\
-                x_sample, x_mean, x_logvar
+                x_mean, x_logvar
 
         [_, _,
          Z_prior_mean, Z_prior_logvar,
          Z_sample, Z_mean, Z_logvar,
-         X_sample, X_mean, X_logvar], updates = theano.scan(
+         X_mean, X_logvar], _ = theano.scan(
             _step,
-            sequences=[X_feat.dimshuffle(1, 0, 2)],
+            sequences=[X_feat,noise],
             outputs_info=[init_cell_batch, init_hidden_batch] +
-            [None] * 8,
+            [None] * 7,
         )
         return [
-            Z_prior_mean.dimshuffle(1, 0, 2),
-            Z_prior_logvar.dimshuffle(1, 0, 2),
-            Z_mean.dimshuffle(1, 0, 2),
-            Z_logvar.dimshuffle(1, 0, 2),
-            X_mean.dimshuffle(1, 0, 2),
-            X_logvar.dimshuffle(1, 0, 2)
-        ], updates
+            Z_prior_mean, Z_prior_logvar,
+            Z_mean, Z_logvar,
+            X_mean, X_logvar,
+        ]
     return extract
 
 
 def cost(X, Z_prior_mean, Z_prior_logvar,
-         Z_mean, Z_logvar, X_mean, X_logvar):
+         Z_mean, Z_logvar, X_mean, X_logvar,
+         lengths):
+    mask = T.arange(X.shape[0]).dimshuffle(0,'x')\
+            < lengths.dimshuffle('x',0)
 
-    encoding_cost = vae.kl_divergence(
+    encoding_cost = mask * vae.kl_divergence(
         mean_1=Z_prior_mean, logvar_1=Z_prior_logvar,
         mean_2=Z_mean, logvar_2=Z_logvar
     )
 
-    reconstruction_cost = vae.gaussian_nll(X, X_mean, X_logvar)
+    reconstruction_cost = mask * vae.gaussian_nll(X, X_mean, X_logvar)
 
-    return -T.mean(
-        T.sum(encoding_cost + reconstruction_cost, axis=-1))
+    return -T.sum(encoding_cost + reconstruction_cost)/T.sum(mask)
 
 
-if __name__ == "__main__":
-    P = Parameters()
-    extract = build(P, "vrnn")
-    print "Compiling..."
-    X = T.tensor3('X')
-    [Z_prior_mean, Z_prior_logvar,
-        Z_mean, Z_logvar, X_mean, X_logvar], updates = extract(X)
 
-    batch_cost = cost(X, Z_prior_mean, Z_prior_logvar,
-                      Z_mean, Z_logvar, X_mean, X_logvar)
-    f = theano.function(inputs=[X], outputs=batch_cost, updates=updates)
-    print "Done compiling."
-    sample_input = np.random.randn(5, 100, 200).astype(np.float32)
-    print f(sample_input)

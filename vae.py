@@ -45,7 +45,8 @@ def build(P, name,
 def gaussian_nll(X, mean, logvar):
     return - 0.5 * T.sum(
         np.log(2 * np.pi) + logvar +
-        T.sqr(X - mean) / T.exp(logvar), axis=-1)
+        T.sqr(X - mean) / T.exp(logvar), axis=-1
+    )
 
 
 def kl_divergence(mean_1, logvar_1, mean_2, logvar_2):
@@ -94,7 +95,7 @@ def build_encoder_output(P, name, input_size, output_size, initialise_weights=No
     P["W_%s_mean" % name] = 0.01 * np.random.randn(input_size, output_size)
     P["b_%s_mean" % name] = np.zeros((output_size,))
     P["W_%s_logvar" % name] = np.zeros((input_size, output_size))
-    P["b_%s_logvar" % name] = np.zeros((output_size,))
+    P["b_%s_logvar" % name] = np.zeros((output_size,)) + 0.6
 
     def output(X, samples=-1):
         mean = T.dot(X, P["W_%s_mean" % name]) + P["b_%s_mean" % name]
