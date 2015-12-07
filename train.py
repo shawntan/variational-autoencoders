@@ -23,6 +23,18 @@ def nan_avoid(parameters,gradients):
     return [ T.switch(T.isnan(g) | T.isinf(g),0.05 * p, g)
                 for p, g in zip(parameters,gradients) ]
 
+def weight_norm(u,norm=1.9356):
+    if u.ndim == 2:
+        in_norm = T.sqrt(T.sum(T.sqr(u),axis=0))
+        ratio = T.minimum(norm,in_norm) / (in_norm + 1e-8)
+        return ratio * u
+    else:
+        return u
+
+
+def normalise_weights(updates):
+    return [ (p,weight_norm(u)) for p,u in updates ]
+
 if __name__ == "__main__":
     P = Parameters()
     extract = model.build(P, "vrnn")
@@ -33,23 +45,23 @@ if __name__ == "__main__":
 
     parameters = P.values()
     batch_cost = model.cost(X, Z_prior_mean, Z_prior_logvar,
-                      Z_mean, Z_logvar, X_mean, X_logvar,l) \
-                            + 1e-8 * sum(T.sum(T.sqr(w)) for w in parameters)
+                      Z_mean, Z_logvar, X_mean, X_logvar,l)
     print "Calculating gradient..."
     print parameters
     gradients = T.grad(batch_cost,wrt=parameters)
     batch_size = T.cast(X.shape[1],'float32')
-    gradients = [ g / batch_size  for g in gradients ]
     gradients = clip(5,gradients)
     gradients = nan_avoid(parameters,gradients)
 
+    P_learn = Parameters()
+    updates = updates.adam(parameters,gradients,P=P_learn)
+    updates = normalise_weights(updates)
 
     print "Compiling..."
-    P_learn = Parameters()
     train = theano.function(
             inputs=[X,l],
             outputs=batch_cost,
-            updates=updates.adam(parameters,gradients,P=P_learn)
+            updates=updates
         )
 
     print "Calculating mean variance..."
@@ -72,8 +84,8 @@ if __name__ == "__main__":
         return batched_stream
 
     print "Training..."
-    P.load('model.pkl')
-    P_learn.load('model.lrn.pkl')
+#    P.load('model.pkl')
+#    P_learn.load('model.lrn.pkl')
     for epoch in xrange(10):
         print "New epoch"
         for data, lengths in stream():

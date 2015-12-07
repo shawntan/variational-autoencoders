@@ -87,10 +87,19 @@ def build(P, name,
         init_hidden_batch = T.alloc(init_hidden, X.shape[1], hidden_layer_size)
         init_cell_batch = T.alloc(init_cell, X.shape[1], hidden_layer_size)
         noise = U.theano_rng.normal(size=(X.shape[0],X.shape[1],z_size))
+        reset_init_mask = U.theano_rng.binomial(size=(X.shape[0],X.shape[1]),p=0.01)
 
         X_feat = X_extractor([X])
 
-        def _step(x_feat,eps, prev_cell, prev_hidden):
+        def _step(x_feat, eps, reset_mask, prev_cell, prev_hidden):
+            reset_mask = reset_mask.dimshuffle(0,'x')
+            prev_cell = T.switch(
+                    reset_mask, init_cell_batch, prev_cell)
+
+            prev_hidden = T.switch(
+                    reset_mask, init_hidden_batch, prev_hidden)
+
+
             _, z_prior_mean, z_prior_logvar = prior([prev_hidden])
             _, z_mean, z_logvar = infer([prev_hidden, x_feat])
             z_sample = z_mean + eps * T.exp(0.5 * z_logvar)
@@ -114,7 +123,7 @@ def build(P, name,
          Z_sample, Z_mean, Z_logvar,
          X_mean, X_logvar], _ = theano.scan(
             _step,
-            sequences=[X_feat,noise],
+            sequences=[X_feat,noise,reset_init_mask],
             outputs_info=[init_cell_batch, init_hidden_batch] +
             [None] * 7,
         )

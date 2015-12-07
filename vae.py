@@ -95,7 +95,7 @@ def build_encoder_output(P, name, input_size, output_size, initialise_weights=No
     P["W_%s_mean" % name] = 0.01 * np.random.randn(input_size, output_size)
     P["b_%s_mean" % name] = np.zeros((output_size,))
     P["W_%s_logvar" % name] = np.zeros((input_size, output_size))
-    P["b_%s_logvar" % name] = np.zeros((output_size,)) + 0.6
+    P["b_%s_logvar" % name] = np.zeros((output_size,))
 
     def output(X, samples=-1):
         mean = T.dot(X, P["W_%s_mean" % name]) + P["b_%s_mean" % name]
