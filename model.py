@@ -80,6 +80,36 @@ def build(P, name,
         initialise_outputs=False
     )
 
+    def sample():
+        init_hidden = T.tanh(P.init_recurrence_hidden)
+        init_cell = P.init_recurrence_cell
+        init_hidden_batch = T.alloc(init_hidden, 1, hidden_layer_size)
+        init_cell_batch = T.alloc(init_cell, 1, hidden_layer_size)
+        noise = U.theano_rng.normal(size=(40,1,z_size))
+
+        def _step(eps, prev_cell, prev_hidden):
+           _, z_prior_mean, z_prior_logvar = prior([prev_hidden])
+           z_sample = z_prior_mean + eps * T.exp(0.5 * z_prior_logvar)
+           z_feat = Z_extractor([z_sample])
+           _, x_mean, _ = generate([prev_hidden, z_feat])
+           x_feat = X_extractor([x_mean])
+           curr_cell, curr_hidden = recurrence(
+               T.concatenate([
+                   x_feat,
+                   z_feat
+               ], axis=1),
+               prev_cell, prev_hidden
+           )
+           return curr_cell, curr_hidden, x_mean
+
+        [cells,hiddens,x_means],_ = theano.scan(
+                _step,
+                sequences=[noise],
+                outputs_info=[init_cell_batch,init_hidden_batch,None],
+            )
+        return x_means
+
+
     def extract(X):
 
         init_hidden = T.tanh(P.init_recurrence_hidden)
@@ -132,7 +162,7 @@ def build(P, name,
             Z_mean, Z_logvar,
             X_mean, X_logvar,
         ]
-    return extract
+    return extract, sample
 
 
 def cost(X, Z_prior_mean, Z_prior_logvar,
@@ -149,6 +179,3 @@ def cost(X, Z_prior_mean, Z_prior_logvar,
     reconstruction_cost = mask * vae.gaussian_nll(X, X_mean, X_logvar)
 
     return -T.sum(encoding_cost + reconstruction_cost)/T.sum(mask)
-
-
-

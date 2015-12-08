@@ -37,7 +37,7 @@ def normalise_weights(updates):
 
 if __name__ == "__main__":
     P = Parameters()
-    extract = model.build(P, "vrnn")
+    extract,_ = model.build(P, "vrnn")
     X = T.tensor3('X')
     l = T.ivector('l')
     [Z_prior_mean, Z_prior_logvar,
