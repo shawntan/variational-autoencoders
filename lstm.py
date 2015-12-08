@@ -39,12 +39,16 @@ def build(P, name, input_size, hidden_size, truncate_gradient=-1):
     return lstm_layer
 
 
-def build_step(P, name, input_size, hidden_size):
-    name_W_input = "W_%s_input" % name
+def build_step(P, name, input_sizes, hidden_size):
     name_W_hidden = "W_%s_hidden" % name
     name_W_cell = "W_%s_cell" % name
     name_b = "b_%s" % name
-    P[name_W_input] = 0.1 * np.random.rand(input_size, hidden_size * 4)
+
+    W_inputs = []
+    for i,input_size in enumerate(input_sizes):
+        P["W_%s_input_%d"%(name,i)] = 0.1 * np.random.rand(input_size, hidden_size * 4)
+        W_inputs.append(P["W_%s_input_%d"%(name,i)])
+
     P[name_W_hidden] = transition_init(hidden_size,4)
     P[name_W_cell] = transition_init(hidden_size,3)
     bias_init = np.zeros((4, hidden_size), dtype=np.float32)
@@ -60,13 +64,19 @@ def build_step(P, name, input_size, hidden_size):
     b_c = biases[2]
     b_o = biases[3]
 
-    def _step(x, prev_cell, prev_hid, mask=None):
+    def _step(*args):
+        inputs = args[:len(input_sizes)]
+        [prev_cell,prev_hid] = args[len(input_sizes):]
+
         # batch_size x hidden_size
-        batch_size = x.shape[0]
+        batch_size = inputs[0].shape[0]
 
         # batch_size x 4 x hidden_size
-        transformed_x = T.dot(x, P[name_W_input]).reshape(
-            (batch_size, 4, hidden_size))
+        transformed_x = sum(
+                T.dot(x, W).reshape((batch_size, 4, hidden_size))
+                for x, W in zip(inputs,W_inputs)
+            )
+
         # batch_size x 4 x hidden_size
         transformed_hid = T.dot(prev_hid, P[name_W_hidden]).reshape(
             (batch_size, 4, hidden_size))
@@ -108,10 +118,5 @@ def build_step(P, name, input_size, hidden_size):
         out_gate.name = "out_gate"
 
         hid = out_gate * T.tanh(cell)
-
-        if mask is not None:
-            mask = mask.dimshuffle(0, 'x')
-            cell = T.switch(mask, cell, prev_cell)
-            hid = T.switch(mask, hid, prev_hid)
         return cell, hid
     return _step

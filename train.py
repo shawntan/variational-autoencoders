@@ -20,7 +20,7 @@ def clip(clip_size,gradients):
     return [ scale * g for g in gradients ]
 
 def nan_avoid(parameters,gradients):
-    return [ T.switch(T.isnan(g) | T.isinf(g),0.05 * p, g)
+    return [ T.switch(T.isnan(g) | T.isinf(g), 0.05 * p, g)
                 for p, g in zip(parameters,gradients) ]
 
 def weight_norm(u,norm=1.9356):

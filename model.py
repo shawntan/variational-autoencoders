@@ -66,7 +66,7 @@ def build(P, name,
     P.init_recurrence_cell = np.zeros((hidden_layer_size,))
     recurrence = lstm.build_step(
         P, "recurrence",
-        input_size=x_extractor_layers[-1] + z_extractor_layers[-1],
+        input_sizes=[x_extractor_layers[-1],z_extractor_layers[-1]],
         hidden_size=hidden_layer_size
     )
 
@@ -93,13 +93,7 @@ def build(P, name,
            z_feat = Z_extractor([z_sample])
            _, x_mean, _ = generate([prev_hidden, z_feat])
            x_feat = X_extractor([x_mean])
-           curr_cell, curr_hidden = recurrence(
-               T.concatenate([
-                   x_feat,
-                   z_feat
-               ], axis=1),
-               prev_cell, prev_hidden
-           )
+           curr_cell, curr_hidden = recurrence(x_feat, z_feat, prev_cell, prev_hidden)
            return curr_cell, curr_hidden, x_mean
 
         [cells,hiddens,x_means],_ = theano.scan(
@@ -136,13 +130,7 @@ def build(P, name,
             z_feat = Z_extractor([z_sample])
             _, x_mean, x_logvar = generate([prev_hidden, z_feat])
 
-            curr_cell, curr_hidden = recurrence(
-                T.concatenate([
-                    x_feat,
-                    z_feat
-                ], axis=1),
-                prev_cell, prev_hidden
-            )
+            curr_cell, curr_hidden = recurrence(x_feat, z_feat, prev_cell, prev_hidden)
             return curr_cell, curr_hidden,\
                 z_prior_mean, z_prior_logvar, \
                 z_sample, z_mean, z_logvar,\
