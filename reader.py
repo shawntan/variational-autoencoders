@@ -3,13 +3,11 @@ import cPickle as pickle
 import gzip
 import data_io
 window_size = 200
-window_idxs = np.arange(100000).reshape(100000, 1) + np.arange(window_size).reshape(1, window_size)
 
 
 def window(wave):
     length = wave.shape[0]
     windows = length // window_size
-#    return wave[window_idxs[:wave.shape[0] - window_size + 1]]
     return wave[:windows * window_size].reshape(windows,window_size)
 
 
@@ -20,9 +18,8 @@ def batch_and_pad(stream, batch_size=5,mean=0,std=1):
         max_length = max(lengths)
         buf = np.zeros((max_length, len(data), window_size), dtype=np.float32)
         for i, x in enumerate(data):
-            windowed_data = window((x-x.mean())/x.std())
+            windowed_data = window((x-mean)/std)
             buf[:windowed_data.shape[0], i] = windowed_data
-
         yield buf, np.array(lengths,dtype=np.int32)
 
 

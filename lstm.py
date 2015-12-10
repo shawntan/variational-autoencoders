@@ -46,8 +46,9 @@ def build_step(P, name, input_sizes, hidden_size):
 
     W_inputs = []
     for i,input_size in enumerate(input_sizes):
-        P["W_%s_input_%d"%(name,i)] = 0.1 * np.random.rand(input_size, hidden_size * 4)
-        W_inputs.append(P["W_%s_input_%d"%(name,i)])
+        name_W = "W_%s_input_%d"%(name,i)
+        P[name_W] = 0.1 * np.random.rand(input_size, hidden_size * 4)
+        W_inputs.append(P[name_W])
 
     P[name_W_hidden] = transition_init(hidden_size,4)
     P[name_W_cell] = transition_init(hidden_size,3)
@@ -84,21 +85,18 @@ def build_step(P, name, input_sizes, hidden_size):
         transformed_cell = T.dot(prev_cell, V_if).reshape(
             (batch_size, 2, hidden_size))
 
-        transformed_x_ = transformed_x.dimshuffle(1, 0, 2)
-        x_i = transformed_x_[0]
-        x_f = transformed_x_[1]
-        x_c = transformed_x_[2]
-        x_o = transformed_x_[3]   # batch_size x hidden_size
+        x_i = transformed_x[:,0]
+        x_f = transformed_x[:,1]
+        x_c = transformed_x[:,2]
+        x_o = transformed_x[:,3]   # batch_size x hidden_size
 
-        transformed_hid_ = transformed_hid.dimshuffle(1, 0, 2)
-        h_i = transformed_hid_[0]
-        h_f = transformed_hid_[1]
-        h_c = transformed_hid_[2]
-        h_o = transformed_hid_[3]  # batch_size x hidden_size
+        h_i = transformed_hid[:,0]
+        h_f = transformed_hid[:,1]
+        h_c = transformed_hid[:,2]
+        h_o = transformed_hid[:,3]  # batch_size x hidden_size
 
-        transformed_cell_ = transformed_cell.dimshuffle(1, 0, 2)
-        c_i = transformed_cell_[0]
-        c_f = transformed_cell_[1]  # batch_size x hidden_size
+        c_i = transformed_cell[:,0]
+        c_f = transformed_cell[:,1]  # batch_size x hidden_size
 
         in_lin = x_i + h_i + b_i + c_i
         forget_lin = x_f + h_f + b_f + c_f

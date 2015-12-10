@@ -14,26 +14,27 @@ from theano_toolkit.parameters import Parameters
 
 import model, reader
 
-def clip(clip_size,gradients):
+def clip(clip_size,parameters,gradients):
     grad_mag = T.sqrt(sum(T.sum(T.sqr(w)) for w in parameters))
+    exploded = T.isnan(grad_mag) | T.isinf(grad_mag)
     scale = clip_size / T.maximum(clip_size,grad_mag)
-    return [ scale * g for g in gradients ]
 
-def nan_avoid(parameters,gradients):
-    return [ T.switch(T.isnan(g) | T.isinf(g), 0.05 * p, g)
-                for p, g in zip(parameters,gradients) ]
+    return [ T.switch(exploded,
+                    0.1 * p,
+                    scale * g
+                ) for p,g in zip(parameters,gradients) ]
 
 def weight_norm(u,norm=1.9356):
-    if u.ndim == 2:
-        in_norm = T.sqrt(T.sum(T.sqr(u),axis=0))
-        ratio = T.minimum(norm,in_norm) / (in_norm + 1e-8)
-        return ratio * u
-    else:
-        return u
+    in_norm = T.sqrt(T.sum(T.sqr(u),axis=0))
+    ratio = T.minimum(norm,in_norm) / (in_norm + 1e-8)
+    return ratio * u
 
 
 def normalise_weights(updates):
-    return [ (p,weight_norm(u)) for p,u in updates ]
+    return [ (
+            p,
+            weight_norm(u) if p.name.startswith('W') else u
+        ) for p,u in updates ]
 
 if __name__ == "__main__":
     P = Parameters()
@@ -41,17 +42,18 @@ if __name__ == "__main__":
     X = T.tensor3('X')
     l = T.ivector('l')
     [Z_prior_mean, Z_prior_logvar,
-        Z_mean, Z_logvar, X_mean, X_logvar] = extract(X)
+        Z_mean, Z_logvar, X_mean, X_logvar] = extract(X,l)
 
     parameters = P.values()
     batch_cost = model.cost(X, Z_prior_mean, Z_prior_logvar,
                       Z_mean, Z_logvar, X_mean, X_logvar,l)
     print "Calculating gradient..."
     print parameters
-    gradients = T.grad(batch_cost,wrt=parameters)
     batch_size = T.cast(X.shape[1],'float32')
-    gradients = clip(5,gradients)
-    gradients = nan_avoid(parameters,gradients)
+
+    gradients = T.grad(batch_cost,wrt=parameters)
+    gradients = [ g / batch_size for g in gradients ]
+    gradients = clip(5,parameters,gradients)
 
     P_learn = Parameters()
     updates = updates.adam(parameters,gradients,P=P_learn)

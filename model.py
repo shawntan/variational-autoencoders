@@ -19,14 +19,17 @@ def build(P, name,
           prior_layers=[500] * 4,
           generation_layers=[600] * 4,
           inference_layers=[500] * 4):
+    def weight_init(x,y):
+        return np.random.uniform(-0.08, 0.08, (x,y))
+
 
     X_extractor = feedforward.build_classifier(
         P, "x_extractor",
         input_sizes=[input_size],
         hidden_sizes=x_extractor_layers[:-1],
         output_size=x_extractor_layers[-1],
-        initial_weights=feedforward.relu_init,
-        output_initial_weights=feedforward.relu_init,
+        initial_weights=weight_init,
+        output_initial_weights=weight_init,
         activation=T.nnet.relu,
         output_activation=T.nnet.relu
     )
@@ -36,8 +39,8 @@ def build(P, name,
         input_sizes=[z_size],
         hidden_sizes=z_extractor_layers[:-1],
         output_size=z_extractor_layers[-1],
-        initial_weights=feedforward.relu_init,
-        output_initial_weights=feedforward.relu_init,
+        initial_weights=weight_init,
+        output_initial_weights=weight_init,
         activation=T.nnet.relu,
         output_activation=T.nnet.relu
     )
@@ -47,7 +50,7 @@ def build(P, name,
         input_sizes=[hidden_layer_size],
         hidden_sizes=prior_layers,
         output_size=z_size,
-        initial_weights=feedforward.relu_init,
+        initial_weights=weight_init,
         activation=T.nnet.relu,
         initialise_outputs=False
     )
@@ -57,7 +60,7 @@ def build(P, name,
         input_sizes=[hidden_layer_size, z_extractor_layers[-1]],
         hidden_sizes=generation_layers,
         output_size=input_size,
-        initial_weights=feedforward.relu_init,
+        initial_weights=weight_init,
         activation=T.nnet.relu,
         initialise_outputs=False
     )
@@ -75,7 +78,7 @@ def build(P, name,
         input_sizes=[hidden_layer_size, x_extractor_layers[-1]],
         hidden_sizes=generation_layers,
         output_size=z_size,
-        initial_weights=feedforward.relu_init,
+        initial_weights=weight_init,
         activation=T.nnet.relu,
         initialise_outputs=False
     )
@@ -104,25 +107,19 @@ def build(P, name,
         return x_means
 
 
-    def extract(X):
+    def extract(X,l):
 
         init_hidden = T.tanh(P.init_recurrence_hidden)
         init_cell = P.init_recurrence_cell
         init_hidden_batch = T.alloc(init_hidden, X.shape[1], hidden_layer_size)
         init_cell_batch = T.alloc(init_cell, X.shape[1], hidden_layer_size)
         noise = U.theano_rng.normal(size=(X.shape[0],X.shape[1],z_size))
-        reset_init_mask = U.theano_rng.binomial(size=(X.shape[0],X.shape[1]),p=0.01)
+        reset_init_mask = U.theano_rng.binomial(size=(X.shape[0],X.shape[1]),p=0.00)
 
         X_feat = X_extractor([X])
 
-        def _step(x_feat, eps, reset_mask, prev_cell, prev_hidden):
+        def _step(t,x_feat, eps, reset_mask, prev_cell, prev_hidden):
             reset_mask = reset_mask.dimshuffle(0,'x')
-            prev_cell = T.switch(
-                    reset_mask, init_cell_batch, prev_cell)
-
-            prev_hidden = T.switch(
-                    reset_mask, init_hidden_batch, prev_hidden)
-
 
             _, z_prior_mean, z_prior_logvar = prior([prev_hidden])
             _, z_mean, z_logvar = infer([prev_hidden, x_feat])
@@ -131,17 +128,27 @@ def build(P, name,
             _, x_mean, x_logvar = generate([prev_hidden, z_feat])
 
             curr_cell, curr_hidden = recurrence(x_feat, z_feat, prev_cell, prev_hidden)
-            return curr_cell, curr_hidden,\
-                z_prior_mean, z_prior_logvar, \
-                z_sample, z_mean, z_logvar,\
-                x_mean, x_logvar
+            curr_cell = T.switch(
+                    reset_mask, init_cell_batch, curr_cell)
+            curr_hidden = T.switch(
+                    reset_mask, init_hidden_batch, curr_hidden)
+
+            mask = (t < l).dimshuffle(0,'x')
+            return tuple(
+                T.switch(mask,out,0)
+                for out in (
+                    curr_cell, curr_hidden,
+                    z_prior_mean, z_prior_logvar,
+                    z_sample, z_mean, z_logvar,
+                    x_mean, x_logvar
+                ))
 
         [_, _,
          Z_prior_mean, Z_prior_logvar,
          Z_sample, Z_mean, Z_logvar,
          X_mean, X_logvar], _ = theano.scan(
             _step,
-            sequences=[X_feat,noise,reset_init_mask],
+            sequences=[T.arange(X_feat.shape[0]),X_feat,noise,reset_init_mask],
             outputs_info=[init_cell_batch, init_hidden_batch] +
             [None] * 7,
         )
