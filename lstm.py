@@ -47,13 +47,13 @@ def build_step(P, name, input_sizes, hidden_size):
     W_inputs = []
     for i,input_size in enumerate(input_sizes):
         name_W = "W_%s_input_%d"%(name,i)
-        P[name_W] = 0.1 * np.random.rand(input_size, hidden_size * 4)
+        P[name_W] = 0.08 * np.random.rand(input_size, hidden_size * 4)
         W_inputs.append(P[name_W])
 
     P[name_W_hidden] = transition_init(hidden_size,4)
     P[name_W_cell] = transition_init(hidden_size,3)
     bias_init = np.zeros((4, hidden_size), dtype=np.float32)
-    bias_init[1] = 1.5
+    bias_init[1] = 0
     P[name_b] = bias_init
 
     V_if = P[name_W_cell][:, 0 * hidden_size:2 * hidden_size]

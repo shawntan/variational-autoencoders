@@ -33,28 +33,28 @@ def build(P, name,
                            initial_weights=initial_weights)
 
     def recon_error(X, encode=encode, decode=decode):
-        Z_latent, Z_mean, Z_logvar = encode([X])
-        _, recon_X_mean, recon_X_logvar = decode([Z_latent])
-        KL_d = kl_divergence(Z_mean, Z_logvar)
-        log_p_X = gaussian_log(recon_X_mean, recon_X_logvar, X)
+        Z_latent, Z_mean, Z_std = encode([X])
+        _, recon_X_mean, recon_X_std = decode([Z_latent])
+        KL_d = kl_divergence(Z_mean, Z_std)
+        log_p_X = gaussian_log(recon_X_mean, recon_X_std, X)
         cost = -(log_p_X - KL_d)
         return recon_X_mean, T.mean(cost), T.mean(KL_d), T.mean(log_p_X)
     return encode, decode, recon_error
 
 
-def gaussian_nll(X, mean, logvar):
+def gaussian_nll(X, mean, std):
     return - 0.5 * T.sum(
-        np.log(2 * np.pi) + logvar +
-        T.sqr(X - mean) / T.exp(logvar), axis=-1
-    )
+            np.log(2 * np.pi) + 2 * T.log(std) +
+            T.sqr(X - mean) / T.sqr(std) , axis=-1
+        )
 
 
-def kl_divergence(mean_1, logvar_1, mean_2, logvar_2):
+def kl_divergence(mean_1, std_1, mean_2, std_2):
     return - 0.5 * T.sum(
-        logvar_2 - logvar_1 +
-        ((T.exp(logvar_1) + T.sqr(mean_1 - mean_2))
-         / T.exp(logvar_2)), axis=-1
-    )
+            2 * T.log(std_2) - 2 * T.log(std_1) +
+            ((T.sqr(std_1) + T.sqr(mean_1 - mean_2))
+             / T.sqr(std_2)) - 1, axis=-1
+        )
 
 
 def build_inferer(P, name, input_sizes, hidden_sizes, output_size,
@@ -82,8 +82,8 @@ def build_inferer(P, name, input_sizes, hidden_sizes, output_size,
     def infer(Xs, samples=-1):
         combine = combine_inputs(Xs)
         hiddens = transform(combine)
-        latent, mean, logvar = output(hiddens[-1], samples=samples)
-        return latent, mean, logvar
+        latent, mean, std = output(hiddens[-1], samples=samples)
+        return latent, mean, std
     return infer
 
 
@@ -92,23 +92,25 @@ def build_encoder_output(P, name, input_size, output_size, initialise_weights=No
     if initialise_weights is None:
         initialise_weights = lambda x, y: np.zeros((x, y))
 
-    P["W_%s_mean" % name] = 0.0 * np.random.randn(input_size, output_size)
+    P["W_%s_mean" % name] = initialise_weights(input_size, output_size)
     P["b_%s_mean" % name] = np.zeros((output_size,))
-    P["W_%s_logvar" % name] = np.zeros((input_size, output_size))
-    P["b_%s_logvar" % name] = np.zeros((output_size,)) - 0.5
+    P["W_%s_std" % name] = initialise_weights(input_size, output_size)
+    P["b_%s_std" % name] = np.zeros((output_size,)) + 0.6
 
     def output(X, samples=-1):
         mean = T.dot(X, P["W_%s_mean" % name]) + P["b_%s_mean" % name]
-        logvar = T.dot(X, P["W_%s_logvar" % name]) + P["b_%s_logvar" % name]
+        std = T.nnet.softplus(
+                T.dot(X, P["W_%s_std" % name]) +\
+                        P["b_%s_std" % name]
+            )
 
-        std = T.exp(0.5 * logvar)
         if samples == -1:
-            eps = U.theano_rng.normal(size=(logvar.shape[0], output_size))
+            eps = U.theano_rng.normal(size=(std.shape[0], output_size))
         else:
-            eps = U.theano_rng.normal(size=(logvar.shape[0], samples, output_size))
+            eps = U.theano_rng.normal(size=(std.shape[0], samples, output_size))
             std = std.dimshuffle(0, 'x', 1)
             mean = mean.dimshuffle(0, 'x', 1)
 
         latent = mean + eps * std
-        return latent, mean, logvar
+        return latent, mean, std
     return output

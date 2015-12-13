@@ -11,6 +11,7 @@ from theano_toolkit import utils as U
 from theano_toolkit import updates
 from theano_toolkit.parameters import Parameters
 
+from theano.compile.nanguardmode import NanGuardMode
 
 import model, reader
 
@@ -41,12 +42,12 @@ if __name__ == "__main__":
     extract,_ = model.build(P, "vrnn")
     X = T.tensor3('X')
     l = T.ivector('l')
-    [Z_prior_mean, Z_prior_logvar,
-        Z_mean, Z_logvar, X_mean, X_logvar] = extract(X,l)
+    [Z_prior_mean, Z_prior_std,
+        Z_mean, Z_std, X_mean, X_std] = extract(X,l)
 
     parameters = P.values()
-    batch_cost = model.cost(X, Z_prior_mean, Z_prior_logvar,
-                      Z_mean, Z_logvar, X_mean, X_logvar,l)
+    batch_cost = model.cost(X, Z_prior_mean, Z_prior_std,
+                      Z_mean, Z_std, X_mean, X_std,l)
     print "Calculating gradient..."
     print parameters
     batch_size = T.cast(X.shape[1],'float32')
@@ -56,15 +57,17 @@ if __name__ == "__main__":
     gradients = clip(5,parameters,gradients)
 
     P_learn = Parameters()
-    updates = updates.adam(parameters,gradients,P=P_learn)
+    updates = updates.adam(parameters,gradients,learning_rate=0.00025,P=P_learn)
     updates = normalise_weights(updates)
 
     print "Compiling..."
     train = theano.function(
             inputs=[X,l],
             outputs=batch_cost,
-            updates=updates
+            updates=updates,
         )
+    test = theano.function(inputs=[X,l],outputs=batch_cost)
+
 
     print "Calculating mean variance..."
     rand_stream = data_io.random_select_stream(*[
@@ -85,13 +88,30 @@ if __name__ == "__main__":
         batched_stream = data_io.buffered_random(batched_stream, buffer_items=4)
         return batched_stream
 
-    print "Training..."
-#    P.load('model.pkl')
-#    P_learn.load('model.lrn.pkl')
-    for epoch in xrange(10):
-        print "New epoch"
-        for data, lengths in stream():
-            print lengths
-            print train(data,lengths)
-        P.save('model.pkl')
-        P_learn.save('model.lrn.pkl')
+    def validate():
+        stream = data_io.stream_file('data/train.%02d.pklgz' % 0)
+        stream = data_io.buffered_sort(stream, key=lambda x: x[1].shape[0], buffer_items=128)
+        batched_stream = reader.batch_and_pad(stream, batch_size=32, mean=mean, std=std)
+
+        total_cost = 0
+        total_frames = 0
+        for data, lengths in batched_stream:
+            batch_avg_cost = test(data,lengths)
+            batch_frames = np.sum(lengths)
+            total_cost += batch_avg_cost * batch_frames
+            total_frames += batch_frames
+        return total_cost / total_frames
+
+    import train_loop
+    train_loop.run(
+            data_iterator=stream,
+            train_fun=lambda batch:train(batch[0],batch[1]),
+            validation_score=validate,
+            save_best_params=lambda:P.save('model.pkl'),
+            load_best_params=lambda:P.load('model.pkl'),
+            max_epochs=1000,
+            patience=5000,
+            patience_increase=2,
+            improvement_threshold=0.999,
+        )
+

@@ -3,12 +3,14 @@ import cPickle as pickle
 import gzip
 import data_io
 window_size = 200
-
+import random
 
 def window(wave):
     length = wave.shape[0]
     windows = length // window_size
-    return wave[:windows * window_size].reshape(windows,window_size)
+    remainder = length - windows * window_size
+    start = random.randint(0,remainder)
+    return wave[start:start + windows * window_size].reshape(windows,window_size)
 
 
 def batch_and_pad(stream, batch_size=5,mean=0,std=1):

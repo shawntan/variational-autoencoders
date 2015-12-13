@@ -52,7 +52,7 @@ def build(P, name,
         output_size=z_size,
         initial_weights=weight_init,
         activation=T.nnet.relu,
-        initialise_outputs=False
+        initialise_outputs=True
     )
 
     generate = vae.build_inferer(
@@ -62,7 +62,7 @@ def build(P, name,
         output_size=input_size,
         initial_weights=weight_init,
         activation=T.nnet.relu,
-        initialise_outputs=False
+        initialise_outputs=True
     )
 
     P.init_recurrence_hidden = np.zeros((hidden_layer_size,))
@@ -80,7 +80,7 @@ def build(P, name,
         output_size=z_size,
         initial_weights=weight_init,
         activation=T.nnet.relu,
-        initialise_outputs=False
+        initialise_outputs=True
     )
 
     def sample():
@@ -91,8 +91,8 @@ def build(P, name,
         noise = U.theano_rng.normal(size=(40,1,z_size))
 
         def _step(eps, prev_cell, prev_hidden):
-           _, z_prior_mean, z_prior_logvar = prior([prev_hidden])
-           z_sample = z_prior_mean + eps * T.exp(0.5 * z_prior_logvar)
+           _, z_prior_mean, z_prior_std = prior([prev_hidden])
+           z_sample = z_prior_mean + eps * z_prior_std
            z_feat = Z_extractor([z_sample])
            _, x_mean, _ = generate([prev_hidden, z_feat])
            x_feat = X_extractor([x_mean])
@@ -114,18 +114,18 @@ def build(P, name,
         init_hidden_batch = T.alloc(init_hidden, X.shape[1], hidden_layer_size)
         init_cell_batch = T.alloc(init_cell, X.shape[1], hidden_layer_size)
         noise = U.theano_rng.normal(size=(X.shape[0],X.shape[1],z_size))
-        reset_init_mask = U.theano_rng.binomial(size=(X.shape[0],X.shape[1]),p=0.00)
+        reset_init_mask = U.theano_rng.binomial(size=(X.shape[0],X.shape[1]),p=0.025)
 
         X_feat = X_extractor([X])
 
         def _step(t,x_feat, eps, reset_mask, prev_cell, prev_hidden):
             reset_mask = reset_mask.dimshuffle(0,'x')
 
-            _, z_prior_mean, z_prior_logvar = prior([prev_hidden])
-            _, z_mean, z_logvar = infer([prev_hidden, x_feat])
-            z_sample = z_mean + eps * T.exp(0.5 * z_logvar)
+            _, z_prior_mean, z_prior_std = prior([prev_hidden])
+            _, z_mean, z_std = infer([prev_hidden, x_feat])
+            z_sample = z_mean + eps * z_std
             z_feat = Z_extractor([z_sample])
-            _, x_mean, x_logvar = generate([prev_hidden, z_feat])
+            _, x_mean, x_std = generate([prev_hidden, z_feat])
 
             curr_cell, curr_hidden = recurrence(x_feat, z_feat, prev_cell, prev_hidden)
             curr_cell = T.switch(
@@ -138,39 +138,47 @@ def build(P, name,
                 T.switch(mask,out,0)
                 for out in (
                     curr_cell, curr_hidden,
-                    z_prior_mean, z_prior_logvar,
-                    z_sample, z_mean, z_logvar,
-                    x_mean, x_logvar
+                    z_prior_mean, z_prior_std,
+                    z_sample, z_mean, z_std,
+                    x_mean, x_std
                 ))
 
         [_, _,
-         Z_prior_mean, Z_prior_logvar,
-         Z_sample, Z_mean, Z_logvar,
-         X_mean, X_logvar], _ = theano.scan(
+         Z_prior_mean, Z_prior_std,
+         Z_sample, Z_mean, Z_std,
+         X_mean, X_std], _ = theano.scan(
             _step,
             sequences=[T.arange(X_feat.shape[0]),X_feat,noise,reset_init_mask],
             outputs_info=[init_cell_batch, init_hidden_batch] +
             [None] * 7,
         )
         return [
-            Z_prior_mean, Z_prior_logvar,
-            Z_mean, Z_logvar,
-            X_mean, X_logvar,
+            Z_prior_mean, Z_prior_std,
+            Z_mean, Z_std,
+            X_mean, X_std,
         ]
     return extract, sample
 
 
-def cost(X, Z_prior_mean, Z_prior_logvar,
-         Z_mean, Z_logvar, X_mean, X_logvar,
-         lengths):
+def cost(X,
+        Z_prior_mean, Z_prior_std,
+        Z_mean, Z_std,
+        X_mean, X_std,
+        lengths):
     mask = T.arange(X.shape[0]).dimshuffle(0,'x')\
             < lengths.dimshuffle('x',0)
 
-    encoding_cost = mask * vae.kl_divergence(
-        mean_1=Z_prior_mean, logvar_1=Z_prior_logvar,
-        mean_2=Z_mean, logvar_2=Z_logvar
-    )
+    encoding_cost = T.switch(mask,
+            vae.kl_divergence(
+                mean_1=Z_mean, std_1=Z_std,
+                mean_2=Z_prior_mean, std_2=Z_prior_std,
+            ),
+            0
+        )
 
-    reconstruction_cost = mask * vae.gaussian_nll(X, X_mean, X_logvar)
+    reconstruction_cost = T.switch(mask,
+            vae.gaussian_nll(X, X_mean, X_std),
+            0
+        )
 
     return -T.sum(encoding_cost + reconstruction_cost)/T.sum(mask)
