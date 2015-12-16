@@ -1,3 +1,5 @@
 *.pyc
 data
 *.pkl
+*.wav
+.*.swp

@@ -123,33 +123,41 @@ def build(P, name,
             _, z_mean, z_std = infer([prev_hidden, x_feat])
             z_sample = z_mean + eps * z_std
             z_feat = Z_extractor([z_sample])
-            _, x_mean, x_std = generate([prev_hidden, z_feat])
 
-            curr_cell, curr_hidden = recurrence(x_feat, z_feat, prev_cell, prev_hidden)
+            curr_cell, curr_hidden = recurrence(
+                x_feat, z_feat,
+                prev_cell, prev_hidden
+            )
+
             curr_cell = T.switch(
                 reset_mask, init_cell_batch, curr_cell)
             curr_hidden = T.switch(
                 reset_mask, init_hidden_batch, curr_hidden)
-
             mask = (t < l).dimshuffle(0, 'x')
+
             return tuple(
                 T.switch(mask, out, 0)
                 for out in (
                     curr_cell, curr_hidden,
                     z_prior_mean, z_prior_std,
-                    z_sample, z_mean, z_std,
-                    x_mean, x_std
+                    z_sample, z_mean, z_std, z_feat
                 ))
 
-        [_, _,
+        [_, hiddens,
          Z_prior_mean, Z_prior_std,
-         Z_sample, Z_mean, Z_std,
-         X_mean, X_std], _ = theano.scan(
+         Z_sample, Z_mean, Z_std, Z_feats], _ = theano.scan(
             _step,
             sequences=[T.arange(X_feat.shape[0]), X_feat, noise, reset_init_mask],
-            outputs_info=[init_cell_batch, init_hidden_batch] +
-            [None] * 7,
+            outputs_info=[init_cell_batch, init_hidden_batch] + [None] * 6,
         )
+
+        hiddens = T.concatenate([
+            init_hidden_batch.dimshuffle('x', 0, 1),
+            hiddens[:-1]
+        ])
+
+        _, X_mean, X_std = generate([hiddens, Z_feats])
+
         return [
             Z_prior_mean, Z_prior_std,
             Z_mean, Z_std,
