@@ -88,7 +88,7 @@ def build(P, name,
         init_cell = P.init_recurrence_cell
         init_hidden_batch = T.alloc(init_hidden, 1, hidden_layer_size)
         init_cell_batch = T.alloc(init_cell, 1, hidden_layer_size)
-        noise = U.theano_rng.normal(size=(40,1,z_size))
+        noise = U.theano_rng.normal(size=(160,1,z_size))
 
         def _step(eps, prev_cell, prev_hidden):
            _, z_prior_mean, z_prior_std = prior([prev_hidden])
