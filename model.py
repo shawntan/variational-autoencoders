@@ -187,4 +187,4 @@ def cost(X,
                                    0
                                    )
 
-    return -T.sum(encoding_cost + reconstruction_cost) / T.sum(mask)
+    return (-T.sum(encoding_cost) -T.sum(reconstruction_cost)) / T.sum(mask)

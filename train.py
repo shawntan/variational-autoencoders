@@ -53,11 +53,11 @@ if __name__ == "__main__":
     batch_size = T.cast(X.shape[1],'float32')
 
     gradients = T.grad(batch_cost,wrt=parameters)
-    gradients = [ g / batch_size for g in gradients ]
+#    gradients = [ g / batch_size for g in gradients ]
     gradients = clip(5,parameters,gradients)
 
     P_learn = Parameters()
-    updates = updates.adam(parameters,gradients,learning_rate=0.00025,P=P_learn)
+    updates = updates.adam(parameters,gradients,learning_rate=0.001,P=P_learn)
     updates = normalise_weights(updates)
 
     print "Compiling..."
@@ -81,10 +81,10 @@ if __name__ == "__main__":
     def stream():
         stream = data_io.random_select_stream(*[
             data_io.stream_file('data/train.%02d.pklgz' % i)
-            for i in xrange(1, 20)
+            for i in xrange(1, 5)
         ])
         stream = data_io.buffered_sort(stream, key=lambda x: x[1].shape[0], buffer_items=128)
-        batched_stream = reader.batch_and_pad(stream, batch_size=16, mean=mean, std=std)
+        batched_stream = reader.batch_and_pad(stream, batch_size=20, mean=mean, std=std)
         batched_stream = data_io.buffered_random(batched_stream, buffer_items=4)
         return batched_stream
 
@@ -103,12 +103,22 @@ if __name__ == "__main__":
         return total_cost / total_frames
 
     import train_loop
+    model_filename = "model.pkl.1"
+    learning_filename = "learning.pkl.1"
+    def save():
+        P.save(model_filename)
+        P_learn.save(learning_filename)
+    def load():
+        P.load(model_filename)
+        P_learn.load(learning_filename)
+    load()
+
     train_loop.run(
             data_iterator=stream,
             train_fun=lambda batch:train(batch[0],batch[1]),
             validation_score=validate,
-            save_best_params=lambda:P.save('model.pkl'),
-            load_best_params=lambda:P.load('model.pkl'),
+            save_best_params=save,
+            load_best_params=load,
             max_epochs=1000,
             patience=5000,
             patience_increase=2,
